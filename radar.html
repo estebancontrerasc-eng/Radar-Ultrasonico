@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sistema Tactical Radar HC-SR04 Pro - Telemetría Avanzada</title>
+  <style>
+    :root {
+      --primary: #00ff66;
+      --primary-glow: rgba(0, 255, 102, 0.4);
+      --bg: #03070d;
+      --card-bg: rgba(6, 15, 25, 0.85);
+      --danger: #ff0044;
+      --danger-glow: rgba(255, 0, 68, 0.6);
+      --warning: #ffaa00;
+      --blue-accent: #00d9ff;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background-color: var(--bg);
+      color: var(--primary);
+      font-family: 'Consolas', 'Courier New', monospace;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+      overflow-x: hidden;
+      background-image: 
+        radial-gradient(circle at 50% 50%, rgba(0, 40, 20, 0.3) 0%, transparent 80%),
+        linear-gradient(rgba(0, 255, 102, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 255, 102, 0.03) 1px, transparent 1px);
+      background-size: 100% 100%, 20px 20px, 20px 20px;
+    }
+
+    /* Efecto CRT Scanlines */
+    body::before {
+      content: " ";
+      display: block;
+      position: fixed;
+      top: 0; left: 0; bottom: 0; right: 0;
+      background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.03));
+      z-index: 999;
+      background-size: 100% 3px, 6px 100%;
+      pointer-events: none;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 20px;
+      width: 100%;
+      max-width: 1100px;
+      border-bottom: 2px solid var(--primary);
+      padding-bottom: 12px;
+      position: relative;
+    }
+
+    h1 {
+      font-size: 2.2rem;
+      letter-spacing: 4px;
+      text-shadow: 0 0 15px var(--primary-glow);
+      text-transform: uppercase;
+    }
+
+    .subtitle {
+      color: #00aa44;
+      font-size: 0.85rem;
+      letter-spacing: 2px;
+      margin-top: 5px;
+    }
+
+    .main-layout {
+      display: grid;
+      grid-template-columns: 1fr 360px;
+      gap: 20px;
+      width: 100%;
+      max-width: 1100px;
+    }
+
+    @media (max-width: 920px) {
+      .main-layout { grid-template-columns: 1fr; }
+    }
+
+    .radar-frame {
+      background: var(--card-bg);
+      border: 1px solid rgba(0, 255, 102, 0.3);
+      border-radius: 12px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+      box-shadow: 0 0 30px rgba(0, 0, 0, 0.9), inset 0 0 15px rgba(0, 255, 102, 0.1);
+      backdrop-filter: blur(5px);
+      position: relative;
+      transition: all 0.3s;
+    }
+
+    .radar-frame.critical {
+      border-color: var(--danger);
+      box-shadow: 0 0 40px var(--danger-glow), inset 0 0 20px rgba(255, 0, 68, 0.2);
+    }
+
+    .canvas-container {
+      position: relative;
+      width: 100%;
+      background: #010408;
+      border: 1px solid #004411;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    canvas { display: block; width: 100%; }
+
+    #radarCanvas { height: 360px; }
+    #scopeCanvas { height: 100px; border-top: 1px solid #003311; }
+
+    .control-panel {
+      background: var(--card-bg);
+      border: 1px solid rgba(0, 255, 102, 0.3);
+      border-radius: 12px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+      box-shadow: 0 0 30px rgba(0, 0, 0, 0.9);
+      backdrop-filter: blur(5px);
+    }
+
+    .status-banner {
+      padding: 12px;
+      border-radius: 6px;
+      font-weight: bold;
+      text-align: center;
+      font-size: 0.9rem;
+      letter-spacing: 2px;
+      background: rgba(0, 255, 102, 0.1);
+      border: 1px solid var(--primary);
+      text-shadow: 0 0 8px var(--primary-glow);
+    }
+
+    .status-banner.critical {
+      background: rgba(255, 0, 68, 0.2);
+      border-color: var(--danger);
+      color: var(--danger);
+      text-shadow: 0 0 10px var(--danger-glow);
+      animation: flash 0.4s infinite alternate;
+    }
+
+    .status-banner.warning {
+      background: rgba(255, 170, 0, 0.2);
+      border-color: var(--warning);
+      color: var(--warning);
+    }
+
+    @keyframes flash {
+      from { opacity: 1; }
+      to { opacity: 0.3; }
+    }
+
+    .readout-box {
+      background: #01050a;
+      border: 1px solid #005522;
+      border-radius: 8px;
+      padding: 15px;
+      text-align: center;
+      position: relative;
+    }
+
+    .readout-box .title {
+      font-size: 0.75rem;
+      color: #00aa44;
+      letter-spacing: 1.5px;
+    }
+
+    .readout-box .number {
+      font-size: 3.5rem;
+      font-weight: 900;
+      color: var(--primary);
+      text-shadow: 0 0 15px var(--primary-glow);
+      line-height: 1.1;
+    }
+
+    .readout-box.critical .number {
+      color: var(--danger);
+      text-shadow: 0 0 15px var(--danger-glow);
+    }
+
+    .telemetry-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      font-size: 0.75rem;
+      background: rgba(0,0,0,0.4);
+      padding: 10px;
+      border-radius: 6px;
+      border: 1px dashed #004411;
+    }
+
+    .telemetry-item span {
+      color: #00ffcc;
+      font-weight: bold;
+    }
+
+    .ctrl-group { display: flex; flex-direction: column; gap: 6px; }
+    .ctrl-group label { font-size: 0.8rem; color: #00cc55; }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--primary);
+      cursor: pointer;
+    }
+
+    input[type="number"] {
+      background: #01050a;
+      border: 1px solid #005522;
+      color: var(--primary);
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: 1.1rem;
+      width: 100%;
+    }
+
+    .btn {
+      background: rgba(0, 40, 15, 0.8);
+      border: 1px solid var(--primary);
+      color: var(--primary);
+      padding: 12px;
+      border-radius: 6px;
+      font-family: inherit;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.2s;
+      letter-spacing: 1px;
+    }
+
+    .btn:hover {
+      background: var(--primary);
+      color: #000;
+      box-shadow: 0 0 15px var(--primary-glow);
+    }
+
+    .btn-alert {
+      border-color: var(--danger);
+      color: var(--danger);
+      background: rgba(40, 0, 10, 0.8);
+    }
+
+    .btn-alert:hover {
+      background: var(--danger);
+      color: #fff;
+      box-shadow: 0 0 20px var(--danger-glow);
+    }
+
+    .btn-eval {
+      border-color: var(--blue-accent);
+      color: var(--blue-accent);
+      background: rgba(0, 30, 50, 0.8);
+    }
+
+    .btn-eval:hover {
+      background: var(--blue-accent);
+      color: #000;
+      box-shadow: 0 0 15px var(--blue-accent);
+    }
+
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>RADAR ULTRASÓNICO TÁCTICO</h1>
+    <div class="subtitle">SISTEMA HC-SR04 // MONITOR DE VARIABLE TEMPORAL t</div>
+  </header>
+
+  <div class="main-layout">
+    <div class="radar-frame" id="radarFrame">
+      <div class="canvas-container">
+        <canvas id="radarCanvas" width="600" height="360"></canvas>
+        <canvas id="scopeCanvas" width="600" height="100"></canvas>
+      </div>
+    </div>
+
+    <div class="control-panel">
+      <div class="status-banner" id="statusBanner">ESTADO: BUSCANDO OBJETIVO</div>
+
+      <div class="readout-box" id="readoutBox">
+        <div class="title">TIEMPO REGISTRADO (t)</div>
+        <div class="number"><span id="timeVal">0.00</span><span style="font-size:1.5rem">s</span></div>
+      </div>
+
+      <div class="telemetry-grid">
+        <div class="telemetry-item">FREC: <span>40.0 kHz</span></div>
+        <div class="telemetry-item">SERVO: <span id="servoAngle">0°</span></div>
+        <div class="telemetry-item">MODO: <span>RETENCIÓN</span></div>
+        <div class="telemetry-item">SENSORES: <span>OK</span></div>
+      </div>
+
+      <div class="ctrl-group">
+        <label>Ajuste Manual de Tiempo t (s):</label>
+        <input type="range" id="timeSlider" min="0" max="20" step="0.05" value="0">
+      </div>
+
+      <div class="ctrl-group">
+        <label>Entrada Exacta de t (s):</label>
+        <input type="number" id="timeInput" min="0" max="100" step="0.1" value="0">
+      </div>
+
+      <button class="btn btn-alert" onclick="setExactTime(1.50)">SIMULAR UMBRAL CRÍTICO (t = 1.50s)</button>
+      <button class="btn btn-eval" onclick="setExactTime(4.00)">EVALUAR EN PUNTO t = 4.00s</button>
+
+      <div class="grid-2">
+        <button class="btn" id="playBtn" onclick="togglePlay()">INICIAR</button>
+        <button class="btn" onclick="resetTime()">RESETEAR</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const radarCanvas = document.getElementById('radarCanvas');
+    const rCtx = radarCanvas.getContext('2d');
+    const scopeCanvas = document.getElementById('scopeCanvas');
+    const sCtx = scopeCanvas.getContext('2d');
+
+    let t = 0;
+    let isPlaying = false;
+    let animId = null;
+    let sweepAngle = 0;
+    let sweepDir = 1;
+    let audioCtx = null;
+    let lastPingTime = 0;
+
+    const timeVal = document.getElementById('timeVal');
+    const timeSlider = document.getElementById('timeSlider');
+    const timeInput = document.getElementById('timeInput');
+    const playBtn = document.getElementById('playBtn');
+    const radarFrame = document.getElementById('radarFrame');
+    const statusBanner = document.getElementById('statusBanner');
+    const readoutBox = document.getElementById('readoutBox');
+    const servoAngleEl = document.getElementById('servoAngle');
+
+    // Inicializar Audio Web
+    function initAudio() {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+    }
+
+    function playSonarPing() {
+      try {
+        initAudio();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(1200, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(400, audioCtx.currentTime + 0.15);
+        
+        gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.15);
+
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.15);
+      } catch (e) {}
+    }
+
+    function playAlarmBeep() {
+      try {
+        initAudio();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+        osc.frequency.linearRampToValueAtTime(1400, audioCtx.currentTime + 0.1);
+        
+        gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+        gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.1);
+      } catch (e) {}
+    }
+
+    function updateDisplay() {
+      timeVal.textContent = t.toFixed(2);
+      timeSlider.value = t > 20 ? 20 : t;
+      timeInput.value = t.toFixed(2);
+
+      const angleDeg = Math.round((sweepAngle * 180) / Math.PI);
+      servoAngleEl.textContent = angleDeg + "°";
+
+      // Estados de Alerta
+      if (t <= 2.0 && t > 0) {
+        radarFrame.className = "radar-frame critical";
+        readoutBox.className = "readout-box critical";
+        statusBanner.className = "status-banner critical";
+        statusBanner.textContent = "ALERTA CRÍTICA: OBJETO EN RANGO (t ≤ 2.0s)";
+
+        const now = performance.now();
+        if (now - lastPingTime > 250) {
+          playAlarmBeep();
+          lastPingTime = now;
+        }
+      } else if (t > 2.0 && t <= 4.0) {
+        radarFrame.className = "radar-frame";
+        readoutBox.className = "readout-box";
+        statusBanner.className = "status-banner warning";
+        statusBanner.textContent = "PRE-ALERTA: APROXIMACIÓN DTECTADA";
+      } else {
+        radarFrame.className = "radar-frame";
+        readoutBox.className = "readout-box";
+        statusBanner.className = "status-banner";
+        statusBanner.textContent = "ESTADO: BUSCANDO OBJETIVO";
+      }
+
+      drawRadar();
+      drawScope();
+    }
+
+    timeSlider.addEventListener('input', (e) => { t = parseFloat(e.target.value); updateDisplay(); });
+    timeInput.addEventListener('input', (e) => {
+      const val = parseFloat(e.target.value);
+      if (!isNaN(val) && val >= 0) { t = val; updateDisplay(); }
+    });
+
+    function setExactTime(val) { t = val; if(isPlaying) togglePlay(); updateDisplay(); }
+    function resetTime() { t = 0; if(isPlaying) togglePlay(); updateDisplay(); }
+
+    function togglePlay() {
+      isPlaying = !isPlaying;
+      initAudio();
+      if (isPlaying) {
+        playBtn.textContent = 'PAUSAR';
+        playBtn.style.borderColor = '#ffaa00';
+        playBtn.style.color = '#ffaa00';
+        lastTime = performance.now();
+        animate();
+      } else {
+        playBtn.textContent = 'INICIAR';
+        playBtn.style.borderColor = 'var(--primary)';
+        playBtn.style.color = 'var(--primary)';
+        cancelAnimationFrame(animId);
+      }
+    }
+
+    let lastTime = 0;
+    function animate() {
+      if (!isPlaying) return;
+      const now = performance.now();
+      t += (now - lastTime) / 1000;
+      lastTime = now;
+      updateDisplay();
+      animId = requestAnimationFrame(animate);
+    }
+
+    function drawRadar() {
+      const w = radarCanvas.width;
+      const h = radarCanvas.height;
+      const cx = w / 2;
+      const cy = h - 25;
+      const radius = h - 45;
+      const isAlarm = (t <= 2.0 && t > 0);
+
+      // Efecto de Persistencia de Fósforo (Desvanecimiento)
+      rCtx.fillStyle = isAlarm ? 'rgba(15, 0, 5, 0.15)' : 'rgba(1, 5, 10, 0.15)';
+      rCtx.fillRect(0, 0, w, h);
+
+      // Dibujar Grilla Polar
+      rCtx.strokeStyle = isAlarm ? 'rgba(255, 0, 68, 0.2)' : 'rgba(0, 255, 102, 0.2)';
+      rCtx.lineWidth = 1;
+
+      for (let r = radius / 4; r <= radius; r += radius / 4) {
+        rCtx.beginPath();
+        rCtx.arc(cx, cy, r, Math.PI, 0, false);
+        rCtx.stroke();
+      }
+
+      for (let ang = 30; ang <= 150; ang += 30) {
+        const rad = (ang * Math.PI) / 180;
+        rCtx.beginPath();
+        rCtx.moveTo(cx, cy);
+        rCtx.lineTo(cx - radius * Math.cos(rad), cy - radius * Math.sin(rad));
+        rCtx.stroke();
+      }
+
+      // Animación de Servo
+      sweepAngle += 0.025 * sweepDir;
+      if (sweepAngle >= Math.PI || sweepAngle <= 0) sweepDir *= -1;
+
+      // Línea de Barrido Principal (Sweep)
+      rCtx.beginPath();
+      rCtx.moveTo(cx, cy);
+      rCtx.lineTo(cx - radius * Math.cos(sweepAngle), cy - radius * Math.sin(sweepAngle));
+      rCtx.strokeStyle = isAlarm ? '#ff0044' : '#00ff66';
+      rCtx.lineWidth = 3;
+      rCtx.shadowColor = isAlarm ? '#ff0044' : '#00ff66';
+      rCtx.shadowBlur = 10;
+      rCtx.stroke();
+      rCtx.shadowBlur = 0;
+
+      // Objeto/Blip
+      const objDist = Math.max(25, (t / 10) * radius);
+      const blipAngle = Math.PI / 3;
+      const bx = cx - objDist * Math.cos(blipAngle);
+      const by = cy - objDist * Math.sin(blipAngle);
+
+      // Detectar si el sweep está pasando por encima del objeto
+      const angleDiff = Math.abs(sweepAngle - blipAngle);
+      if (angleDiff < 0.05 && performance.now() - lastPingTime > 300 && !isAlarm) {
+        playSonarPing();
+        lastPingTime = performance.now();
+      }
+
+      // Dibujar Objetivo
+      rCtx.beginPath();
+      rCtx.arc(bx, by, isAlarm ? 10 : 7, 0, Math.PI * 2);
+      rCtx.fillStyle = isAlarm ? '#ff0044' : '#00d9ff';
+      rCtx.shadowColor = isAlarm ? '#ff0044' : '#00d9ff';
+      rCtx.shadowBlur = 15;
+      rCtx.fill();
+      rCtx.shadowBlur = 0;
+    }
+
+    function drawScope() {
+      const w = scopeCanvas.width;
+      const h = scopeCanvas.height;
+      const isAlarm = (t <= 2.0 && t > 0);
+
+      sCtx.fillStyle = '#010408';
+      sCtx.fillRect(0, 0, w, h);
+
+      // Rejilla de Osciloscopio
+      sCtx.strokeStyle = '#002211';
+      sCtx.lineWidth = 1;
+      for (let x = 0; x < w; x += 30) {
+        sCtx.beginPath(); sCtx.moveTo(x, 0); sCtx.lineTo(x, h); sCtx.stroke();
+      }
+      sCtx.beginPath(); sCtx.moveTo(0, h/2); sCtx.lineTo(w, h/2); sCtx.stroke();
+
+      // Señal ultrasónica
+      sCtx.beginPath();
+      sCtx.strokeStyle = isAlarm ? '#ff0044' : '#00ff66';
+      sCtx.lineWidth = 2;
+
+      for (let x = 0; x < w; x++) {
+        const freq = isAlarm ? 0.2 : 0.05;
+        const amp = isAlarm ? 30 : 15;
+        const y = (h / 2) + Math.sin(x * freq + performance.now() * 0.01) * amp * (t <= 2 ? 1 : 0.4);
+        if (x === 0) sCtx.moveTo(x, y);
+        else sCtx.lineTo(x, y);
+      }
+      sCtx.stroke();
+    }
+
+    updateDisplay();
+  </script>
+</body>
+</html>
